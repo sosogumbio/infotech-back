@@ -1,77 +1,57 @@
+
 import pg from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 /**
- * Classe que representa o modelo de banco de dados.
+ * Classe responsável pela conexão com o banco de dados.
  */
 export class DatabaseModel {
-    
-    /**
-     * Configuração para conexão com o banco de dados
-     */
-    private _config: object;
-
-    /**
-     * Pool de conexões com o banco de dados
-     */
     private _pool: pg.Pool;
 
-    /**
-     * Cliente de conexão com o banco de dados
-     */
-    private _client: pg.Client;
-
-    /**
-     * Construtor da classe DatabaseModel.
-     */
     constructor() {
-        // Configuração padrão para conexão com o banco de dados
-        this._config = {
-            user: process.env.DB_USER,
-            host: process.env.DB_HOST,
-            database: process.env.DB_NAME,
-            password: process.env.DB_PASSWORD,
-            port: process.env.DB_PORT,
-            max: 10,
-            idleTimoutMillis: 10000
+        const connectionString = process.env.DATABASE_URL;
+
+        if (!connectionString) {
+            throw new Error(
+                'A variável DATABASE_URL não foi configurada no ambiente.'
+            );
         }
 
-        // Inicialização do pool de conexões
-        this._pool = new pg.Pool(this._config);
+        this._pool = new pg.Pool({
+            connectionString,
+            ssl: {
+                rejectUnauthorized: false
+            },
+            max: 10,
+            idleTimeoutMillis: 10000
+        });
 
-        // Inicialização do cliente de conexão
-        this._client = new pg.Client(this._config);
+        this._pool.on('error', (error) => {
+            console.error('Erro inesperado no pool do banco:', error);
+        });
     }
 
     /**
-     * Método para testar a conexão com o banco de dados.
-     *
-     * @returns **true** caso a conexão tenha sido feita, **false** caso negativo
+     * Testa a conexão com o banco de dados.
      */
-    public async testeConexao() {
+    public async testeConexao(): Promise<boolean> {
         try {
-            // Tenta conectar ao banco de dados
-            await this._client.connect();
+            await this._pool.query('SELECT 1');
+
             console.log('Database connected!');
-            // Encerra a conexão
-            this._client.end();
             return true;
         } catch (error) {
-            // Em caso de erro, exibe uma mensagem de erro
-            console.log('Error to connect database X( ');
-            console.log(error);
-            // Encerra a conexão
-            this._client.end();
+            console.error('Erro ao conectar com o banco de dados:', error);
             return false;
         }
     }
 
     /**
-     * Getter para o pool de conexões.
+     * Retorna o pool de conexões.
      */
-    public get pool() {
+    public get pool(): pg.Pool {
         return this._pool;
     }
 }
