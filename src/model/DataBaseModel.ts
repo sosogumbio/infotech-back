@@ -1,57 +1,64 @@
-
-import pg from 'pg';
-import dotenv from 'dotenv';
-
+import pg from "pg";
+import dotenv from "dotenv";
 dotenv.config();
 
-/**
- * Classe responsável pela conexão com o banco de dados.
- */
 export class DatabaseModel {
-    private _pool: pg.Pool;
+  private _pool: pg.Pool;
 
-    constructor() {
-        const connectionString = process.env.DATABASE_URL;
-
-        if (!connectionString) {
-            throw new Error(
-                'A variável DATABASE_URL não foi configurada no ambiente.'
-            );
-        }
-
-        this._pool = new pg.Pool({
-            connectionString,
-            ssl: {
-                rejectUnauthorized: false
-            },
-            max: 10,
-            idleTimeoutMillis: 10000
-        });
-
-        this._pool.on('error', (error) => {
-            console.error('Erro inesperado no pool do banco:', error);
-        });
+  constructor() {
+    if (!process.env.DATABASE_URL) {
+      // Local/dev por variáveis separadas
+      this._pool = new pg.Pool({
+        user: process.env.DB_USER,
+        host: process.env.DB_HOST,
+        database: process.env.DB_NAME,
+        password: process.env.DB_PASSWORD,
+        port: Number(process.env.DB_PORT) || 5432,
+        ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+        max: 10,
+        idleTimeoutMillis: 10_000,
+      });
+      return;
     }
 
-    /**
-     * Testa a conexão com o banco de dados.
-     */
-    public async testeConexao(): Promise<boolean> {
-        try {
-            await this._pool.query('SELECT 1');
+    // PRODUÇÃO: desmonta a URL e passa os campos + SSL no-verify
+    const u = new URL(process.env.DATABASE_URL);
+    const user = decodeURIComponent(u.username);
+    const password = decodeURIComponent(u.password);
+    const host = u.hostname;
+    const port = Number(u.port || 5432);
+    const database = u.pathname.replace(/^\//, "");
 
-            console.log('Database connected!');
-            return true;
-        } catch (error) {
-            console.error('Erro ao conectar com o banco de dados:', error);
-            return false;
-        }
-    }
+    // logs mínimos (não expõem segredos)
+    console.log("[DB] Host:", host, "Port:", port, "Pooler?", host.includes("pooler.supabase.com"));
 
-    /**
-     * Retorna o pool de conexões.
-     */
-    public get pool(): pg.Pool {
-        return this._pool;
+    this._pool = new pg.Pool({
+      host,
+      port,
+      database,
+      user,
+      password,
+      // 👇 força ignorar a cadeia (continua TLS criptografado)
+      ssl: { rejectUnauthorized: false },
+      max: 10,
+      idleTimeoutMillis: 10_000,
+    });
+  }
+
+  public async testeConexao(): Promise<boolean> {
+    try {
+      const { rows } = await this._pool.query("select now()");
+      console.clear();
+      console.log("Database connected!", rows[0].now);
+      return true;
+    } catch (error) {
+      console.error("Error to connect database X(", error);
+      console.error("Não foi possível conectar ao banco de dados");
+      return false;
     }
+  }
+
+  public get pool() {
+    return this._pool;
+  }
 }
